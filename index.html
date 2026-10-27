@@ -16,6 +16,10 @@
   .big{font-size:42px;font-weight:bold;color:#4ade80}
   button{font-size:18px;padding:12px 20px;margin:6px;border:0;border-radius:10px;background:#22c55e;color:#fff}
   #status{padding:6px;color:#aaa}
+  #hist{max-width:640px;margin:10px auto;padding:0 12px;text-align:left}
+  #hist h3{margin:8px 0}
+  .row{display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #333;font-size:18px}
+  .small{font-size:14px;padding:8px 14px;background:#475569}
 </style>
 </head>
 <body>
@@ -26,14 +30,32 @@
   <div>In view now<div class="big" id="now">0</div></div>
 </div>
 <button id="start">Start</button>
-<button id="reset" style="background:#ef4444">Reset</button>
+<button id="reset" style="background:#ef4444">Reset today</button>
+<div id="hist"><h3>Daily history</h3><div id="list"></div>
+<button class="small" id="clear">Clear all history</button></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
 <script>
 const v = document.getElementById('v'), c = document.getElementById('c');
 const ctx = c.getContext('2d');
-let model, tracks = [], nextId = 1, total = 0, running = false;
+let model, tracks = [], nextId = 1, running = false;
+const KEY = 'sheepHistory';
+function loadHist(){ try{ return JSON.parse(localStorage.getItem(KEY)) || {}; }catch(e){ return {}; } }
+function saveHist(h){ try{ localStorage.setItem(KEY, JSON.stringify(h)); }catch(e){} }
+function today(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+let total = loadHist()[today()] || 0;
+function saveToday(){ const h=loadHist(); h[today()]=total; saveHist(h); renderHist(); }
+function renderHist(){
+  const h=loadHist(), days=Object.keys(h).sort().reverse();
+  document.getElementById('list').innerHTML = days.length
+    ? days.map((d,i)=>{ const diff = i<days.length-1 ? h[d]-h[days[i+1]] : null;
+        const note = diff===null||diff===0 ? '' : (diff<0 ? ' <span style="color:#f87171">('+diff+')</span>' : ' <span style="color:#4ade80">(+'+diff+')</span>');
+        return '<div class="row"><span>'+d+'</span><b>'+h[d]+note+'</b></div>'; }).join('')
+    : '<div style="color:#aaa;padding:8px">No counts saved yet.</div>';
+  document.getElementById('total').textContent = total;
+}
+renderHist();
 
 async function init() {
   model = await cocoSsd.load();
@@ -56,8 +78,12 @@ document.getElementById('start').onclick = async () => {
 };
 
 document.getElementById('reset').onclick = () => {
-  total = 0; tracks = [];
-  document.getElementById('total').textContent = 0;
+  if(!confirm("Reset today's count to 0?")) return;
+  total = 0; tracks = []; saveToday();
+};
+document.getElementById('clear').onclick = () => {
+  if(!confirm('Delete ALL saved history?')) return;
+  saveHist({}); total = 0; tracks = []; renderHist();
 };
 
 async function loop() {
@@ -78,7 +104,7 @@ async function loop() {
     });
     if (best && bd < 120) {
       const before = best.cy < lineY, after = cy < lineY;
-      if (before !== after && !best.counted) { total++; best.counted = true; }
+      if (before !== after && !best.counted) { total++; best.counted = true; saveToday(); }
       best.cx = cx; best.cy = cy; best.missed = 0; used.add(best.id);
     } else {
       tracks.push({ id: nextId++, cx, cy, missed: 0, counted: false });
