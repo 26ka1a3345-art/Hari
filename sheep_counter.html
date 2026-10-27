@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sheep Counter</title>
+<style>
+  body{margin:0;background:#111;color:#fff;font-family:sans-serif;text-align:center}
+  #wrap{position:relative;width:100%;max-width:640px;margin:auto}
+  video,canvas{width:100%;display:block}
+  canvas{position:absolute;top:0;left:0}
+  .bar{display:flex;justify-content:space-around;padding:10px;font-size:20px}
+  .big{font-size:42px;font-weight:bold;color:#4ade80}
+  button{font-size:18px;padding:12px 20px;margin:6px;border:0;border-radius:10px;background:#22c55e;color:#fff}
+  #status{padding:6px;color:#aaa}
+</style>
+</head>
+<body>
+<div id="status">Loading AI model...</div>
+<div id="wrap"><video id="v" autoplay playsinline muted></video><canvas id="c"></canvas></div>
+<div class="bar">
+  <div>Total counted<div class="big" id="total">0</div></div>
+  <div>In view now<div class="big" id="now">0</div></div>
+</div>
+<button id="start">Start</button>
+<button id="reset" style="background:#ef4444">Reset</button>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+<script>
+const v = document.getElementById('v'), c = document.getElementById('c');
+const ctx = c.getContext('2d');
+let model, tracks = [], nextId = 1, total = 0, running = false;
+
+async function init() {
+  model = await cocoSsd.load();
+  document.getElementById('status').textContent = 'Ready. Press Start.';
+}
+init();
+
+document.getElementById('start').onclick = async () => {
+  if (running) return;
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment' }, audio: false
+  });
+  v.srcObject = stream;
+  await v.play();
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  running = true;
+  document.getElementById('status').textContent = 'Counting... sheep crossing the yellow line are counted.';
+  loop();
+};
+
+document.getElementById('reset').onclick = () => {
+  total = 0; tracks = [];
+  document.getElementById('total').textContent = 0;
+};
+
+async function loop() {
+  if (!running) return;
+  const preds = await model.detect(v);
+  const sheep = preds.filter(p => p.class === 'sheep' && p.score > 0.4);
+  const lineY = c.height / 2;
+
+  // match detections to existing tracks (nearest centre)
+  const used = new Set();
+  sheep.forEach(p => {
+    const cx = p.bbox[0] + p.bbox[2] / 2, cy = p.bbox[1] + p.bbox[3] / 2;
+    let best = null, bd = 1e9;
+    tracks.forEach(t => {
+      if (used.has(t.id)) return;
+      const d = Math.hypot(t.cx - cx, t.cy - cy);
+      if (d < bd) { bd = d; best = t; }
+    });
+    if (best && bd < 120) {
+      const before = best.cy < lineY, after = cy < lineY;
+      if (before !== after && !best.counted) { total++; best.counted = true; }
+      best.cx = cx; best.cy = cy; best.missed = 0; used.add(best.id);
+    } else {
+      tracks.push({ id: nextId++, cx, cy, missed: 0, counted: false });
+      used.add(nextId - 1);
+    }
+  });
+  tracks.forEach(t => { if (!used.has(t.id)) t.missed++; });
+  tracks = tracks.filter(t => t.missed < 15);
+
+  // draw
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.strokeStyle = 'yellow'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, lineY); ctx.lineTo(c.width, lineY); ctx.stroke();
+  ctx.strokeStyle = '#4ade80'; ctx.lineWidth = 3;
+  sheep.forEach(p => ctx.strokeRect(...p.bbox));
+
+  document.getElementById('total').textContent = total;
+  document.getElementById('now').textContent = sheep.length;
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
