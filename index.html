@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sheep Counter</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#16a34a">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   body{margin:0;background:#111;color:#fff;font-family:sans-serif;text-align:center}
   #wrap{position:relative;width:100%;max-width:640px;margin:auto}
@@ -37,6 +40,7 @@ async function init() {
   document.getElementById('status').textContent = 'Ready. Press Start.';
 }
 init();
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}
 
 document.getElementById('start').onclick = async () => {
   if (running) return;
